@@ -5,17 +5,8 @@ import { OAuth2Client } from "google-auth-library";
 import jwt from "jsonwebtoken";
 import bcrypt, { compareSync } from "bcrypt";
 import { sendMail } from "../../utils/email/index.js";
+import Joi from "joi";
 
-export const errorHandler = (fn) => {
-  try {
-    //lofig of code 
-    fn()
-  } catch (error) {
-    res
-      .status(error.cause || 500)
-      .json({ message: error.message, success: false, stack: error.stack });
-  }
-};
 export const generateCodeOtp = (length = 6) => {
   let degits = "0123456789";
   let otp = "";
@@ -29,7 +20,8 @@ export const generateCodeOtp = (length = 6) => {
 export const register = async (req, res, next) => {
   try {
     const { fName, lName, email, pass, dob, phone } = req.body;
-
+    
+    
     const userExist = await user.findOne({
       $or: [
         {
@@ -230,3 +222,11 @@ export const deleteUser = async (req, res, next) => {
       .json({ message: error.message, success: false });
   }
 };
+
+
+
+export const uploadProfilePicture = async (req , res ,next) =>{
+
+  res.send("done");
+  
+}
