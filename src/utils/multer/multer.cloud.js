@@ -2,17 +2,9 @@
 import multer, { diskStorage } from "multer";
 import { nanoid } from "nanoid";
 
-export function fileUpload() {
+export function fileUploadCloud() {
   const storage = diskStorage({
-    destination: "uploads",
-    filename: (req, file, cb) => {
-      if (file.mimetype == "application/pdf") {
-        cb(new Error("invalid file format", { cause: 409 }));
-      }
-      // cb(null ,Date.now() + "-" + file.originalname)
-      cb(null , nanoid(5) + "-" + file.originalname)
-    },
-  });
+  }); //TEMP
 
 const fileFilter = (req, file, cb) => {
   if (
@@ -24,6 +16,7 @@ const fileFilter = (req, file, cb) => {
     cb(new Error("Invalid file type"), false);
   }
 };
+
   return multer({ storage  , fileFilter}); // new multer
 }
 
