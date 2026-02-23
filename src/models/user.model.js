@@ -50,10 +50,14 @@ const userSehma = new Schema({
     },
     isExpired:{
         type:Date
+    },
+    profilePic:{
+        secure_url:String,
+        public_id:String,
     }
 },{timestamps:true})
 
-const user = model("user" , userSehma)
+const User = model("user" , userSehma)
 
 
 userSehma.virtual("fullName").get(function(){
@@ -70,4 +74,4 @@ userSehma.virtual("fullName").set(function(name){
 })
 
 
-export {user} ;
+export {User} ;

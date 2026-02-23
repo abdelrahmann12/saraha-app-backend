@@ -1,21 +1,14 @@
 import dotenv from "dotenv";
 dotenv.config();
-import { user } from "../../models/user.model.js";
 import { OAuth2Client } from "google-auth-library";
 import jwt from "jsonwebtoken";
 import bcrypt, { compareSync } from "bcrypt";
 import { sendMail } from "../../utils/email/index.js";
+import Joi from "joi";
+import { verifyToken } from "../../utils/token/index.js";
+import cloudinary from "../../utils/cloud/cloudinary.config.js";
+import { User } from "../../models/user.model.js";
 
-export const errorHandler = (fn) => {
-  try {
-    //lofig of code 
-    fn()
-  } catch (error) {
-    res
-      .status(error.cause || 500)
-      .json({ message: error.message, success: false, stack: error.stack });
-  }
-};
 export const generateCodeOtp = (length = 6) => {
   let degits = "0123456789";
   let otp = "";
@@ -54,12 +47,14 @@ export const register = async (req, res, next) => {
     }
     const hashedPassword = bcrypt.hashSync(pass, 10);
     let otp = generateCodeOtp(6);
+    if (email) {
+      sendMail({
+        to: email,
+        subject: "verfiy code",
+        html: `<p>your verfiy code is ${otp}</p>`,
+      });
+    }
 
-    sendMail({
-      to: email,
-      subject: "verfiy code",
-      html: `<p>your verfiy code is ${otp}</p>`,
-    });
     const createUser = await user.create({
       firstName: fName,
       lastName: lName,
@@ -72,19 +67,10 @@ export const register = async (req, res, next) => {
     });
     const safeUser = await user.findById(createUser._id);
 
-    const token = jwt.sign(
-      { id: createUser._id, email: createUser.email },
-      process.env.JWT_SECRET,
-      {
-        expiresIn: "7d",
-      },
-    );
-
     res.status(200).json({
       message: "user created successfuly",
       success: true,
       data: safeUser,
-      token: token,
     });
   } catch (error) {
     res
@@ -155,8 +141,7 @@ export const login = async (req, res, next) => {
   try {
     const { email, phoneNumber, password } = req.body;
 
-    const userExist = await user
-      .findOne({
+    const userExist = await User.findOne({
         $or: [
           {
             $and: [
@@ -180,13 +165,21 @@ export const login = async (req, res, next) => {
       throw new Error("invalid email or password", { cause: 401 });
     }
 
-    console.log(password);
-    console.log(userExist);
     const match = compareSync(password, userExist.password);
     if (!match) {
       throw new Error("invalid email or password", { cause: 401 });
     }
-    res.status(200).json({ message: "user login successfuly", success: true });
+    const token = jwt.sign(
+      { id: userExist._id , email: userExist.email , phoneNumber: userExist.phoneNumber },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: "7d",
+      },
+    );
+
+    res
+      .status(200)
+      .json({ message: "user login successfuly", success: true, token: token });
   } catch (error) {
     res
       .status(error.cause || 500)
@@ -230,3 +223,37 @@ export const deleteUser = async (req, res, next) => {
       .json({ message: error.message, success: false });
   }
 };
+
+export const uploadProfilePicture = async (req, res, next) => {
+  const token = req.headers.authorization;
+  const { id } = verifyToken(token);
+  const userExist = await User.findByIdAndUpdate(id, {
+    profilePic: req.file.path,
+  }, {new:true});
+
+  if (!userExist) {
+    throw new Error("user not found", { cause: 404 });
+  }
+
+  return res
+    .status(200)
+    .json({
+      message: "profilePic updated successfuly",
+      success: true,
+      data: userExist,
+    });
+};
+
+
+export const uploadProfilePictureCloud = async (req , res ,next)=>{
+  const user = req.user ;
+  console.log(user);
+  const {secure_url , public_id} = await cloudinary.uploader.upload(
+    req.file.path
+  );
+  const userExist = await User.updateOne({_id:req.user.id} , {profilePic:{secure_url , public_id}});
+  if(!userExist){
+    res.status(400).json({message:"user not found" , success:false});
+  }
+  res.status(200).json({message:"photo updated successfuly" , success:true})
+}
