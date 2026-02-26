@@ -8,3 +8,6 @@ export const registerSchema = Joi.object({
       dob: Joi.date(),
       phone: Joi.string().length(11),
     }).or("email", "phone");
+
+
+
