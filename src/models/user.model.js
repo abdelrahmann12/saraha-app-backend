@@ -54,6 +54,10 @@ const userSehma = new Schema({
     profilePic:{
         secure_url:String,
         public_id:String,
+    },
+    credentialUpdatedAt:{
+        type:Date,
+        default:Date.now(),
     }
 },{timestamps:true})
 

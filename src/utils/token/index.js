@@ -11,3 +11,15 @@ export const verifyToken = (token) => {
     
   }
 };
+
+
+
+export const generateToken = (payload, expiresIn = "1h") => {
+  const token = jwt.sign(
+    payload,
+    process.env.JWT_SECRET,
+    { expiresIn }
+  );
+
+  return token;
+};

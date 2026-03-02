@@ -4,26 +4,18 @@ import { OAuth2Client } from "google-auth-library";
 import jwt from "jsonwebtoken";
 import bcrypt, { compareSync } from "bcrypt";
 import { sendMail } from "../../utils/email/index.js";
-import Joi from "joi";
-import { verifyToken } from "../../utils/token/index.js";
+
+import { generateToken, verifyToken } from "../../utils/token/index.js";
 import cloudinary from "../../utils/cloud/cloudinary.config.js";
 import { User } from "../../models/user.model.js";
-
-export const generateCodeOtp = (length = 6) => {
-  let degits = "0123456789";
-  let otp = "";
-  for (let i = 0; i < length; i++) {
-    let randomNum = Math.floor(Math.random() * 10);
-    otp += degits[randomNum];
-  }
-  return otp;
-};
+import { generateCodeOtp } from "../../utils/otp/index.js";
+import { Token } from "../../models/token.model.js";
 
 export const register = async (req, res, next) => {
   try {
     const { fName, lName, email, pass, dob, phone } = req.body;
 
-    const userExist = await user.findOne({
+    const userExist = await User.findOne({
       $or: [
         {
           $and: [
@@ -55,7 +47,7 @@ export const register = async (req, res, next) => {
       });
     }
 
-    const createUser = await user.create({
+    const createUser = await User.create({
       firstName: fName,
       lastName: lName,
       email,
@@ -65,7 +57,7 @@ export const register = async (req, res, next) => {
       phoneNumber: phone,
       isExpired: Date.now() + 10 * 60 * 1000,
     });
-    const safeUser = await user.findById(createUser._id);
+    const safeUser = await User.findById(createUser._id);
 
     res.status(200).json({
       message: "user created successfuly",
@@ -83,7 +75,7 @@ export const verfiyAccount = async (req, res, next) => {
   try {
     const { email, otp } = req.body;
 
-    const userExist = await user.findOne({
+    const userExist = await User.findOne({
       email,
       otp,
       isExpired: { $gt: Date.now() },
@@ -110,20 +102,23 @@ export const resendOtp = async (req, res, next) => {
   try {
     const { email } = req.body;
 
-    const userExist = await user.findOne({ email });
+    const userExist = await User.findOne({ email });
     if (!userExist) {
       throw new Error("user not found", { cause: 404 });
     }
     if (userExist.isVerify) {
       throw new Error("account already verified", { cause: 400 });
     }
-    let otp = generateCodeOtp(6);
+
+    let  {otp , otpExpire} = generateCodeOtp(6);
+
     sendMail({
       to: email,
       subject: "re-sent otp",
       html: `<h2>your verify code is${otp}</h2>`,
     });
-    userExist.isExpired = Date.now() + 15 * 60 * 1000;
+
+    userExist.isExpired = otpExpire
     userExist.otp = otp;
     await userExist.save();
 
@@ -140,26 +135,25 @@ export const resendOtp = async (req, res, next) => {
 export const login = async (req, res, next) => {
   try {
     const { email, phoneNumber, password } = req.body;
-
+    
     const userExist = await User.findOne({
-        $or: [
-          {
-            $and: [
-              { email: { $ne: null } },
-              { email: { $exists: true } },
-              { email: email },
-            ],
-          },
-          {
-            $and: [
-              { phoneNumber: { $ne: null } },
-              { phoneNumber: { $exists: true } },
-              { phoneNumber: phoneNumber },
-            ],
-          },
-        ],
-      })
-      .select("+password");
+      $or: [
+        {
+          $and: [
+            { email: { $ne: null } },
+            { email: { $exists: true } },
+            { email: email },
+          ],
+        },
+        {
+          $and: [
+            { phoneNumber: { $ne: null } },
+            { phoneNumber: { $exists: true } },
+            { phoneNumber: phoneNumber },
+          ],
+        },
+      ],
+    }).select("+password");
 
     if (!userExist) {
       throw new Error("invalid email or password", { cause: 401 });
@@ -169,17 +163,30 @@ export const login = async (req, res, next) => {
     if (!match) {
       throw new Error("invalid email or password", { cause: 401 });
     }
-    const token = jwt.sign(
-      { id: userExist._id , email: userExist.email , phoneNumber: userExist.phoneNumber },
-      process.env.JWT_SECRET,
+
+    const accessToken = generateToken(
       {
-        expiresIn: "7d",
+        id: userExist._id,
+        email: userExist.email,
+        phoneNumber: userExist.phoneNumber,
       },
+      "15m",
     );
 
+    const refrechToken = generateToken(
+      {
+        id: userExist._id,
+        email: userExist.email,
+        phoneNumber: userExist.phoneNumber,
+      },
+      "30d",
+    );
+
+    const saveRefrechToken = await Token.create({token:refrechToken , type:"refrech" , user:userExist._id});
+    
     res
       .status(200)
-      .json({ message: "user login successfuly", success: true, token: token });
+      .json({ message: "user login successfuly", success: true, accesstoken: accessToken , refrechToken:refrechToken });
   } catch (error) {
     res
       .status(error.cause || 500)
@@ -203,13 +210,15 @@ export const googleLogin = async (req, res, next) => {
 };
 export const deleteUser = async (req, res, next) => {
   try {
-    const { id } = req.params;
+    const token = req.headers.authorization;
+    const payload = verifyToken(token);
+    const { id, name } = payload;
 
     if (req.user.id !== id) {
       return res.status(403).json({ message: "Not authorized" });
     }
 
-    const userExist = await user.findByIdAndDelete(id);
+    const userExist = await User.findByIdAndDelete(id);
     if (!userExist) {
       throw new Error("user not Found", { cause: 401 });
     }
@@ -227,33 +236,71 @@ export const deleteUser = async (req, res, next) => {
 export const uploadProfilePicture = async (req, res, next) => {
   const token = req.headers.authorization;
   const { id } = verifyToken(token);
-  const userExist = await User.findByIdAndUpdate(id, {
-    profilePic: req.file.path,
-  }, {new:true});
+  const userExist = await User.findByIdAndUpdate(
+    id,
+    {
+      profilePic: req.file.path,
+    },
+    { new: true },
+  );
 
   if (!userExist) {
     throw new Error("user not found", { cause: 404 });
   }
 
-  return res
-    .status(200)
-    .json({
-      message: "profilePic updated successfuly",
-      success: true,
-      data: userExist,
-    });
+  return res.status(200).json({
+    message: "profilePic updated successfuly",
+    success: true,
+    data: userExist,
+  });
 };
 
-
-export const uploadProfilePictureCloud = async (req , res ,next)=>{
-  const user = req.user ;
+export const uploadProfilePictureCloud = async (req, res, next) => {
+  const user = req.user;
   console.log(user);
-  const {secure_url , public_id} = await cloudinary.uploader.upload(
-    req.file.path
+  const { secure_url, public_id } = await cloudinary.uploader.upload(
+    req.file.path,
   );
-  const userExist = await User.updateOne({_id:req.user.id} , {profilePic:{secure_url , public_id}});
-  if(!userExist){
-    res.status(400).json({message:"user not found" , success:false});
+  const userExist = await User.updateOne(
+    { _id: req.user.id },
+    { profilePic: { secure_url, public_id } },
+  );
+  if (!userExist) {
+    res.status(400).json({ message: "user not found", success: false });
   }
-  res.status(200).json({message:"photo updated successfuly" , success:true})
-}
+  res.status(200).json({ message: "photo updated successfuly", success: true });
+};
+
+export const forgetPassword = async (req, res, next) => {
+  const { email, otp, newPassword } = req.body;
+
+  const userExist = await User.findOne({ email });
+  // check user exist
+  if (!userExist) {
+    throw new Error("user not found", { cause: 409 });
+  }
+  // send new otp
+  resendOtp;
+
+  if (userExist.otp == otp && userExist.isExpired > Date.now()) {
+    const hashedPassword = bcrypt.hashSync(newPassword, 10);
+    userExist.password = hashedPassword;
+  }
+  // update credential update time to invalid all pervious tokens 
+  userExist.credentialUpdatedAt = Date.now()
+  await userExist.save();
+
+  await Token.deleteMany({user:userExist._id , type:"refrech"})
+  res
+    .status(200)
+    .json({ message: "password reseted successfuly", success: true });
+};
+
+export const logout = async (req, res, next) => {
+  const token = req.headers.authorization;
+
+  // store token in database
+  const saveToken = await Token.create({ token, user: req.user.id });
+
+  res.status(200).json({ message: "user logout successfuly", success: true });
+};
