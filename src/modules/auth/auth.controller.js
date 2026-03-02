@@ -3,7 +3,7 @@ import * as authService from "./auth.service.js";
 import { auth } from "../../middleware/isAuthenticated.js";
 import { isValid } from "../../middleware/validation.middleware.js";
 import { registerSchema } from "./auth.validation.js";
-import { asyncHandler } from "../../utils/error/asyncHandler.js";
+import { asyncHandler } from "../../utils/error/index.js";
 import { fileUpload } from "../../utils/multer/index.js";
 import { fileValidation } from "../../middleware/file.validation.js";
 import { fileUploadCloud } from "../../utils/multer/multer.cloud.js";

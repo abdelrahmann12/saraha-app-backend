@@ -290,6 +290,7 @@ export const forgetPassword = async (req, res, next) => {
   userExist.credentialUpdatedAt = Date.now()
   await userExist.save();
 
+  await Token.deleteMany({user:userExist._id , type:"refrech"})
   res
     .status(200)
     .json({ message: "password reseted successfuly", success: true });

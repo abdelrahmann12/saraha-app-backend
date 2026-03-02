@@ -8,10 +8,15 @@ export const auth = async (req, res, next) => {
       return res.status(401).json({ message: "No token provided" });
     }
     const decode = jwt.verify(token, process.env.JWT_SECRET);
+    if (!decode) {
+      throw new Error("token not valid");
+    }
     const userExist = await User.findById(decode.id);
 
     if (userExist.credentialUpdatedAt) {
-      const changedTime = parseInt(userExist.credentialUpdatedAt.getTime() / 1000);
+      const changedTime = parseInt(
+        userExist.credentialUpdatedAt.getTime() / 1000,
+      );
 
       if (changedTime > decode.iat) {
         throw new Error("Token expired due to password change");
@@ -25,6 +30,13 @@ export const auth = async (req, res, next) => {
 
     next();
   } catch (error) {
+    if (error.name === "JsonWebTokenError") {
+      return res.status(401).json({ message: "Token is not valid" });
+    }
+
+    if (error.name === "TokenExpiredError") {
+      return res.status(401).json({ message: "Token has expired" });
+    }
     return res.status(401).json({ message: error.message });
   }
 };
